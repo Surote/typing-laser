@@ -2188,11 +2188,12 @@
       ];
       const speedLevels = {slow:.65, normal:1, fast:1.5, expert:2.2};
       const historyLimit = 50;
+      const recentWordLimit = 50;
       const game = {
         phase:'ready', words:[], lockedId:null, score:0, lives:3, wave:1,
         elapsed:0, correct:0, attempts:0, destroyed:0, particles:[], beams:[],
         spawnIn:0, nextId:1, flash:0, best:0, sound:false,
-        history:[], historyTotal:0, speed:'normal'
+        history:[], historyTotal:0, speed:'normal', spawnedWords:new Set(), recentWords:[]
       };
       let width = 1000, height = 550, lastTime = 0, audio = null;
       const stars = Array.from({length:95}, () => ({x:Math.random(), y:Math.random(), size:Math.random()*1.4+.3, alpha:Math.random()*.55+.15}));
@@ -2283,11 +2284,11 @@
       }
 
       function startGame() {
-        Object.assign(game, {phase:'playing',words:[],lockedId:null,score:0,lives:3,wave:1,elapsed:0,correct:0,attempts:0,destroyed:0,particles:[],beams:[],spawnIn:1.8,nextId:1,flash:0,history:[],historyTotal:0});
+        Object.assign(game, {phase:'playing',words:[],lockedId:null,score:0,lives:3,wave:1,elapsed:0,correct:0,attempts:0,destroyed:0,particles:[],beams:[],spawnIn:1.8,nextId:1,flash:0,history:[],historyTotal:0,spawnedWords:new Set(),recentWords:[]});
         renderHistory();
         $('overlay').hidden = true;
         input.placeholder = 'Type a falling word…'; input.value = '';
-        spawnWord('orbit');
+        spawnWord();
         input.focus({preventScroll:true});
         syncHud(); announce('Game started. Type the falling words. Three shields remaining.');
       }
@@ -2321,11 +2322,22 @@
         return ctx.measureText(text).width + 30;
       }
 
-      function spawnWord(forcedText) {
+      function spawnWord() {
         const pool = wordPools[game.wave < 2 ? 0 : game.wave < 4 ? 1 : 2];
         const available = pool.filter(([text]) => !game.words.some(word => word.text === text));
         if (!available.length) return;
-        const text = forcedText || available[Math.floor(Math.random() * available.length)][0];
+        let candidates = available.filter(([text]) => !game.spawnedWords.has(text));
+        if (!candidates.length) {
+          game.spawnedWords.clear();
+          candidates = available;
+        }
+        const fresh = candidates.filter(([text]) => !game.recentWords.includes(text));
+        const [text] = fresh.length
+          ? fresh[Math.floor(Math.random() * fresh.length)]
+          : candidates.reduce((oldest, entry) => game.recentWords.lastIndexOf(entry[0]) < game.recentWords.lastIndexOf(oldest[0]) ? entry : oldest);
+        game.spawnedWords.add(text);
+        game.recentWords.push(text);
+        if (game.recentWords.length > recentWordLimit) game.recentWords.shift();
         const {thai, chinese, pinyin} = translations.get(text);
         const boxWidth = wordWidth(text);
         const margin = Math.min(width / 2, boxWidth / 2 + 8);
