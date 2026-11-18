@@ -25,8 +25,12 @@
     .quiet:hover { color:var(--text); border-color:#64748b; }
     .play-layout { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:20px; align-items:stretch; }
     .flight { min-width:0; }
-    .speed-control { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+    .speed-control { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-bottom:14px; }
     .speed-control label { font-size:12px; color:var(--text); white-space:nowrap; }
+    .speed-control .mature-control { display:flex; align-items:center; gap:7px; }
+    #mature-words { margin:0; accent-color:var(--cyan); }
+    .mature-note { color:var(--muted); font-size:11px; }
+    .mature-control:has(input:disabled) { opacity:.5; }
     #falling-speed { border:1px solid #3b4e68; border-radius:7px; padding:8px 29px 8px 10px; background:var(--panel); color:var(--cyan); font-size:12px; }
     .speed-control p { color:var(--muted); font-size:11px; line-height:1.5; margin:0; }
     .history-panel { display:flex; flex-direction:column; min-height:0; border:1px solid var(--line); border-radius:14px; background:var(--panel); overflow:hidden; }
@@ -126,6 +130,7 @@
             <option value="expert">Expert · 2.2×</option>
           </select>
           <p id="speed-help">Change anytime. Multiplies each wave’s pace.</p>
+          <label class="mature-control"><input id="mature-words" type="checkbox" aria-describedby="mature-help"> Mature words <span class="mature-note" id="mature-help">Profanity and rude slang</span></label>
         </div>
     <section aria-label="Game statistics" class="hud">
       <div class="stat"><span class="stat-label">Score</span><span class="stat-value" id="score">00000</span></div>
@@ -2180,12 +2185,25 @@
         ["zoom", "ขยายภาพ", "放大", "fàng dà"],
         ["zucchini", "ซูกินี", "西葫芦", "xī hú lu"]
       ];
-      const translations = new Map(vocabulary.map(([text, thai, chinese, pinyin]) => [text, {thai, chinese, pinyin}]));
-      const wordPools = [
-        vocabulary.filter(([text]) => text.length <= 5),
-        vocabulary.filter(([text]) => text.length <= 7),
-        vocabulary
+      const badWords = [
+        ["damn", "บ้าเอ๊ย", "该死", "gāi sǐ"],
+        ["crap", "ห่วยแตก", "垃圾", "lā jī"],
+        ["stupid", "โง่", "愚蠢", "yú chǔn"],
+        ["idiot", "ไอ้โง่", "白痴", "bái chī"],
+        ["moron", "ไอ้ปัญญาอ่อน", "蠢货", "chǔn huò"],
+        ["loser", "ไอ้ขี้แพ้", "废物", "fèi wù"],
+        ["dumbass", "ไอ้ควาย", "蠢蛋", "chǔn dàn"],
+        ["piss", "เยี่ยว", "尿", "niào"],
+        ["shit", "ขี้", "屎", "shǐ"],
+        ["fuck", "เย็ด", "操", "cào"],
+        ["bitch", "อีดอก", "贱人", "jiàn rén"],
+        ["bastard", "ไอ้สารเลว", "王八蛋", "wáng bā dàn"],
+        ["asshole", "ไอ้เหี้ย", "混蛋", "hún dàn"],
+        ["dick", "ควย", "鸡巴", "jī ba"],
+        ["slut", "อีร่าน", "荡妇", "dàng fù"]
       ];
+      const translations = new Map([...vocabulary, ...badWords].map(([text, thai, chinese, pinyin]) => [text, {thai, chinese, pinyin}]));
+      let wordPools;
       const speedLevels = {slow:.65, normal:1, fast:1.5, expert:2.2};
       const historyLimit = 50;
       const recentWordLimit = 50;
@@ -2193,7 +2211,7 @@
         phase:'ready', words:[], lockedId:null, score:0, lives:3, wave:1,
         elapsed:0, correct:0, attempts:0, destroyed:0, particles:[], beams:[],
         spawnIn:0, nextId:1, flash:0, best:0, sound:false,
-        history:[], historyTotal:0, speed:'normal', spawnedWords:new Set(), recentWords:[]
+        history:[], historyTotal:0, speed:'normal', mature:false, spawnedWords:new Set(), recentWords:[]
       };
       let width = 1000, height = 550, lastTime = 0, audio = null;
       const stars = Array.from({length:95}, () => ({x:Math.random(), y:Math.random(), size:Math.random()*1.4+.3, alpha:Math.random()*.55+.15}));
@@ -2201,9 +2219,21 @@
         game.best = Math.max(0, Number(localStorage.getItem('typing-laser-best')) || 0);
         const savedSpeed = localStorage.getItem('typing-laser-speed');
         if (Object.hasOwn(speedLevels, savedSpeed)) game.speed = savedSpeed;
+        game.mature = localStorage.getItem('typing-laser-mature') === 'true';
       } catch (_) {}
       $('falling-speed').value = game.speed;
-      $('vocabulary-count').textContent = vocabulary.length.toLocaleString();
+      $('mature-words').checked = game.mature;
+      rebuildWordPools();
+
+      function rebuildWordPools() {
+        const activeVocabulary = game.mature ? [...vocabulary, ...badWords] : vocabulary;
+        wordPools = [
+          activeVocabulary.filter(([text]) => text.length <= 5),
+          activeVocabulary.filter(([text]) => text.length <= 7),
+          activeVocabulary
+        ];
+        $('vocabulary-count').textContent = activeVocabulary.length.toLocaleString();
+      }
 
       function setSpeed(key) {
         if (!Object.hasOwn(speedLevels, key)) return;
@@ -2272,6 +2302,7 @@
         $('target-state').textContent = game.phase === 'playing' ? (target ? 'Target locked' : 'Ready to fire') : game.phase === 'paused' ? 'Flight paused' : game.phase === 'over' ? 'Mission complete' : 'Awaiting launch';
         $('pause').disabled = game.phase === 'ready' || game.phase === 'over';
         $('pause').textContent = game.phase === 'paused' ? 'Resume' : 'Pause';
+        $('mature-words').disabled = game.phase === 'playing' || game.phase === 'paused';
         $('mission').textContent = game.phase === 'playing' ? 'Defend your orbit' : game.phase === 'paused' ? 'Flight paused' : game.phase === 'over' ? 'Flight complete' : 'Flight simulator';
       }
 
@@ -2284,6 +2315,7 @@
       }
 
       function startGame() {
+        rebuildWordPools();
         Object.assign(game, {phase:'playing',words:[],lockedId:null,score:0,lives:3,wave:1,elapsed:0,correct:0,attempts:0,destroyed:0,particles:[],beams:[],spawnIn:1.8,nextId:1,flash:0,history:[],historyTotal:0,spawnedWords:new Set(),recentWords:[]});
         renderHistory();
         $('overlay').hidden = true;
@@ -2479,6 +2511,15 @@
       }
 
       $('falling-speed').addEventListener('change', event => setSpeed(event.target.value));
+      $('mature-words').addEventListener('change', event => {
+        if (game.phase === 'playing' || game.phase === 'paused') {
+          event.target.checked = game.mature;
+          return;
+        }
+        game.mature = event.target.checked;
+        try { localStorage.setItem('typing-laser-mature', String(game.mature)); } catch (_) {}
+        rebuildWordPools();
+      });
       $('start').addEventListener('click', () => game.phase==='paused'?resumeGame():startGame());
       $('pause').addEventListener('click', () => game.phase==='playing'?pauseGame():resumeGame());
       $('sound').addEventListener('click', () => {
@@ -2486,7 +2527,7 @@
         tone(660,.1); if(game.phase==='playing') input.focus({preventScroll:true});
       });
       document.addEventListener('keydown', event => {
-        if (event.ctrlKey||event.metaKey||event.altKey||event.isComposing || event.target.tagName === 'SELECT') return;
+        if (event.ctrlKey||event.metaKey||event.altKey||event.isComposing || event.target.tagName === 'SELECT' || event.target === $('mature-words')) return;
         if (event.key==='Escape') {event.preventDefault();game.phase==='playing'?pauseGame():resumeGame();return;}
         if (event.key==='Enter' && event.target.tagName!=='BUTTON') {event.preventDefault();if(game.phase==='paused')resumeGame();else if(game.phase!=='playing')startGame();return;}
         if (game.phase!=='playing' || event.target.tagName==='BUTTON') return;
